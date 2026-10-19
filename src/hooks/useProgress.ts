@@ -6,6 +6,7 @@ export type Progress = {
   xp: number;
   streak: number;
   lastDay: string;
+  studyDays: string[];
   dailyNew: number;
   language: 'en' | 'vi' | null;
   showHV: boolean;
@@ -19,6 +20,7 @@ const initial: Progress = {
   xp: 0,
   streak: 0,
   lastDay: '',
+  studyDays: [],
   dailyNew: 10,
   language: null,
   showHV: true,
@@ -36,16 +38,43 @@ function localDateKey(date: Date): string {
 function markStudyActivity(progress: Progress): Progress {
   const now = new Date();
   const today = localDateKey(now);
-  if (progress.lastDay === today) return progress;
+  const studyDays = progress.studyDays ?? [];
+  const updatedStudyDays = studyDays.includes(today) ? studyDays : [...studyDays, today];
+  if (progress.lastDay === today) {
+    return updatedStudyDays === studyDays ? progress : { ...progress, studyDays: updatedStudyDays };
+  }
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
   const streak = progress.lastDay === localDateKey(yesterday) ? progress.streak + 1 : 1;
-  return { ...progress, streak, lastDay: today };
+  return { ...progress, streak, lastDay: today, studyDays: updatedStudyDays };
+}
+
+function refreshStreak(progress: Progress): Progress {
+  if (!progress.lastDay) return progress;
+
+  const now = new Date();
+  const today = localDateKey(now);
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const yesterdayKey = localDateKey(yesterday);
+
+  // Keep today's streak visible, and preserve yesterday's until the user acts
+  // today. Once a full day has been missed, show zero instead of a stale count.
+  if (progress.lastDay !== today && progress.lastDay !== yesterdayKey && progress.streak !== 0) {
+    return { ...progress, streak: 0 };
+  }
+  return progress;
 }
 
 function loadProgress(): Progress {
   try {
     const saved = localStorage.getItem(KEY);
-    return saved ? { ...initial, ...JSON.parse(saved) } : initial;
+    if (!saved) return initial;
+
+    const loaded = { ...initial, ...JSON.parse(saved) } as Progress;
+    loaded.studyDays = Array.isArray(loaded.studyDays) ? [...loaded.studyDays] : [];
+    if (loaded.lastDay && !loaded.studyDays.includes(loaded.lastDay)) {
+      loaded.studyDays.push(loaded.lastDay);
+    }
+    return refreshStreak(loaded);
   } catch {
     // Keep the game usable when storage is unavailable or contains invalid data.
     return initial;
